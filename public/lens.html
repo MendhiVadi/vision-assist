@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vision Assist - What's in this image?</title>
+  <style>
+    :root { --bg: #fff; --fg: #1a1a1a; --card: #f3f3f3; --accent: #00a152; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #121212; --fg: #eee; --card: #232323; --accent: #00e676; } }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
+    a { color: var(--accent); }
+    #drop { border: 2px dashed #888; border-radius: 10px; padding: 2rem 1rem; text-align: center; background: var(--card); }
+    #drop.over { border-color: var(--accent); }
+    button, label.btn { padding: .5rem .9rem; border-radius: 6px; border: 1px solid #888; background: var(--card); color: var(--fg); cursor: pointer; font: inherit; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; margin-top: .75rem; }
+    #stage { position: relative; margin-top: 1rem; line-height: 0; }
+    #stage img, #stage video { width: 100%; border-radius: 8px; display: block; background: #000; }
+    #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    #chips { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+    .chip { background: var(--card); border: 2px solid transparent; border-radius: 999px; padding: .35rem .8rem; cursor: pointer; }
+    .chip.active { border-color: var(--accent); }
+    .chip small { opacity: .65; }
+    #status { margin-top: 1rem; min-height: 1.5rem; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <p><a href="/">Live mode</a></p>
+  <h1>What's in this image?</h1>
+
+  <div id="drop">
+    <p>Drop an image here, paste one (Ctrl+V), or choose below.</p>
+    <div class="row">
+      <label class="btn">Upload image<input type="file" id="file" accept="image/*" hidden></label>
+      <button id="camBtn" type="button">Use camera</button>
+      <button id="snapBtn" type="button" hidden>Take photo</button>
+      <button id="liveBtn" type="button">Live</button>
+    </div>
+  </div>
+
+  <div id="stage" hidden>
+    <video id="video" autoplay playsinline muted hidden></video>
+    <img id="img" alt="Analyzed image" hidden>
+    <canvas id="overlay"></canvas>
+  </div>
+  <div id="status" aria-live="polite"></div>
+  <div id="chips"></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const img = $('img'), video = $('video'), overlay = $('overlay'), chips = $('chips'), status = $('status');
+    let stream = null, result = null, active = null;
+    const colors = ['#00e676', '#ff9100', '#40c4ff', '#ff4081', '#ffd740', '#b388ff', '#69f0ae', '#ff6e40'];
+    const colorOf = (label) => colors[[...new Set((result?.detections || []).map((d) => d.label))].indexOf(label) % colors.length];
+
+    function draw() {
+      if (!result) return;
+      overlay.width = result.width; overlay.height = result.height;
+      const ctx = overlay.getContext('2d');
+      const s = Math.max(1, result.width / 640); // scale strokes/text to the image size
+      ctx.lineWidth = 3 * s; ctx.font = `${16 * s}px system-ui, sans-serif`; ctx.textBaseline = 'top';
+      for (const d of result.detections) {
+        if (active && d.label !== active) continue;
+        const [x1, y1, x2, y2] = d.box, c = colorOf(d.label);
+        const label = `${d.label} ${Math.round(d.confidence * 100)}%`;
+        ctx.strokeStyle = c; ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        ctx.fillStyle = c; ctx.fillRect(x1, y1, ctx.measureText(label).width + 8 * s, 22 * s);
+        ctx.fillStyle = '#000'; ctx.fillText(label, x1 + 4 * s, y1 + 3 * s);
+      }
+    }
+
+    let chipSig = '';
+    function render() {
+      const sig = result.objects.map((o) => o.label + o.count).join('|') + '#' + active;
+      if (sig !== chipSig) { chipSig = sig; renderChips(); }
+      draw();
+    }
+    function renderChips() {
+      chips.replaceChildren();
+      for (const o of result.objects) {
+        const b = document.createElement('button');
+        b.className = 'chip' + (active === o.label ? ' active' : '');
+        b.innerHTML = `${o.label}${o.count > 1 ? ' ×' + o.count : ''} <small>${Math.round(o.confidence * 100)}%</small>`;
+        b.onclick = () => { active = active === o.label ? null : o.label; render(); draw(); };
+        chips.append(b);
+      }
+    }
+
+    async function analyze(blob) {
+      stopLive(); stopCamera();
+      if (img.src) URL.revokeObjectURL(img.src);
+      img.src = URL.createObjectURL(blob);
+      img.hidden = false; video.hidden = true; $('stage').hidden = false;
+      result = null; active = null; chips.replaceChildren(); overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
+      status.textContent = 'Looking...';
+      try {
+        const res = await fetch('/api/process?hq=1', { method: 'POST', headers: { 'Content-Type': blob.type || 'image/jpeg' }, body: blob });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.status);
+        result = data;
+        status.textContent = data.objects.length
+          ? `Found ${data.detections.length} object${data.detections.length === 1 ? '' : 's'} (${data.objects.length} kind${data.objects.length === 1 ? '' : 's'}). Tap a label to isolate it.`
+          : 'No objects recognized.';
+        render();
+      } catch (err) {
+        status.textContent = 'Error: ' + err.message;
+      }
+    }
+
+    $('file').onchange = (e) => e.target.files[0] && analyze(e.target.files[0]);
+    const drop = $('drop');
+    window.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    window.addEventListener('dragleave', () => drop.classList.remove('over'));
+    window.addEventListener('drop', (e) => {
+      e.preventDefault(); drop.classList.remove('over');
+      const f = [...e.dataTransfer.files].find((f) => f.type.startsWith('image/'));
+      if (f) analyze(f);
+    });
+    window.addEventListener('paste', (e) => {
+      const f = [...e.clipboardData.files].find((f) => f.type.startsWith('image/'));
+      if (f) analyze(f);
+    });
+
+    // Live mode: camera + continuous analysis; each frame is sent when the previous result is back.
+    let live = false, liveGen = 0;
+    const grab = document.createElement('canvas');
+    function grabFrame() {
+      const scale = Math.min(1, 640 / video.videoWidth);
+      grab.width = Math.round(video.videoWidth * scale); grab.height = Math.round(video.videoHeight * scale);
+      grab.getContext('2d').drawImage(video, 0, 0, grab.width, grab.height);
+      return new Promise((r) => grab.toBlob(r, 'image/jpeg', 0.85));
+    }
+    async function liveLoop(gen) {
+      while (live && gen === liveGen) {
+        if (!video.videoWidth) { await new Promise((r) => setTimeout(r, 200)); continue; }
+        try {
+          const blob = await grabFrame();
+          const res = await fetch('/api/process?hq=1', { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || res.status);
+          if (!live || gen !== liveGen) break;
+          result = data;
+          status.textContent = data.objects.length ? `Live: ${data.detections.length} object${data.detections.length === 1 ? '' : 's'}` : 'Live: nothing recognized';
+          overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
+          render();
+        } catch (err) {
+          status.textContent = 'Error: ' + err.message;
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+    }
+    async function startLive() {
+      if (!stream) await startCamera();
+      if (!stream) return;
+      live = true; liveGen++; result = null; active = null; chipSig = '';
+      $('liveBtn').textContent = 'Stop live'; $('snapBtn').hidden = true;
+      liveLoop(liveGen);
+    }
+    function stopLive() {
+      if (!live) return;
+      live = false; liveGen++;
+      $('liveBtn').textContent = 'Live';
+      overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
+      chips.replaceChildren(); chipSig = ''; status.textContent = '';
+    }
+    $('liveBtn').onclick = () => (live ? (stopLive(), $('snapBtn').hidden = !stream) : startLive());
+
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      } catch (err) { status.textContent = 'Camera unavailable: ' + err.message; return; }
+      video.srcObject = stream; video.hidden = false; img.hidden = true; $('stage').hidden = false;
+      overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
+      chips.replaceChildren(); status.textContent = ''; $('snapBtn').hidden = false;
+    }
+    function stopCamera() {
+      stopLive();
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      stream = null; video.srcObject = null; $('snapBtn').hidden = true;
+    }
+    $('camBtn').onclick = startCamera;
+    $('snapBtn').onclick = () => {
+      const c = document.createElement('canvas');
+      c.width = video.videoWidth; c.height = video.videoHeight;
+      c.getContext('2d').drawImage(video, 0, 0);
+      c.toBlob(analyze, 'image/jpeg', 0.92);
+    };
+  </script>
+</body>
+</html>

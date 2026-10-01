@@ -1,0 +1,15 @@
+[project]
+name = "vision-assist"
+version = "0.1.0"
+description = "Real-time webcam scene description with voice output"
+requires-python = ">=3.10"
+dependencies = ["ultralytics>=8.3", "opencv-python>=4.9", "pyttsx3>=2.90", "numpy>=1.26"]
+
+[project.scripts]
+vision-assist = "vision_assist.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
