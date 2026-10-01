@@ -1,0 +1,8 @@
+models/
+tests/
+paper/
+*.pptx
+.obsidian/
+src/
+server.js
+package.json
