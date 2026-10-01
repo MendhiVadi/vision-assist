@@ -5,3 +5,9 @@ __pycache__/
 node_modules/
 .obsidian/workspace*.json
 .pytest_cache/
+
+.vercel
+public/models/*.onnx
+models/*.onnx
+build_onnx/
+models/*.json

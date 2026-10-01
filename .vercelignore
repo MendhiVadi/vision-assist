@@ -1,8 +1,9 @@
-models/
+/models/
 tests/
 paper/
 *.pptx
 .obsidian/
-src/
+/src/
 server.js
 package.json
+scripts/

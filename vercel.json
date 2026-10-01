@@ -3,5 +3,18 @@
   "buildCommand": "",
   "installCommand": "",
   "outputDirectory": "public",
-  "rewrites": [{ "source": "/lens", "destination": "/lens.html" }]
+  "rewrites": [{ "source": "/lens", "destination": "/lens.html" }],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }
+      ]
+    },
+    {
+      "source": "/(models|ort)/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    }
+  ]
 }

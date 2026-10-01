@@ -46,6 +46,8 @@
   <div id="status" aria-live="polite"></div>
   <div id="chips"></div>
 
+  <script src="/ort/ort.all.min.js"></script>
+  <script src="/js/vision.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
     const img = $('img'), video = $('video'), overlay = $('overlay'), chips = $('chips'), status = $('status');
@@ -86,6 +88,12 @@
       }
     }
 
+    // Detection runs in the browser (onnxruntime-web); nothing is uploaded.
+    async function detectBlob(blob, onStatus) {
+      const bmp = await createImageBitmap(blob);
+      try { return await Vision.analyze(bmp, 'lens', onStatus); } finally { bmp.close(); }
+    }
+
     async function analyze(blob) {
       stopLive(); stopCamera();
       if (img.src) URL.revokeObjectURL(img.src);
@@ -94,9 +102,7 @@
       result = null; active = null; chips.replaceChildren(); overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
       status.textContent = 'Looking...';
       try {
-        const res = await fetch('/api/process?hq=1', { method: 'POST', headers: { 'Content-Type': blob.type || 'image/jpeg' }, body: blob });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || res.status);
+        const data = await detectBlob(blob, (m) => (status.textContent = m));
         result = data;
         status.textContent = data.objects.length
           ? `Found ${data.detections.length} object${data.detections.length === 1 ? '' : 's'} (${data.objects.length} kind${data.objects.length === 1 ? '' : 's'}). Tap a label to isolate it.`
@@ -135,9 +141,7 @@
         if (!video.videoWidth) { await new Promise((r) => setTimeout(r, 200)); continue; }
         try {
           const blob = await grabFrame();
-          const res = await fetch('/api/process?hq=1', { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || res.status);
+          const data = await detectBlob(blob);
           if (!live || gen !== liveGen) break;
           result = data;
           status.textContent = data.objects.length ? `Live: ${data.detections.length} object${data.detections.length === 1 ? '' : 's'}` : 'Live: nothing recognized';
