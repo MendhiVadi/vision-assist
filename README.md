@@ -1,3 +1,10 @@
+---
+title: Vision Assist
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Vision Assist
 
 Real-time webcam scene description. Reads your camera, detects objects with YOLO, and tells you what it sees, on screen and out loud:
