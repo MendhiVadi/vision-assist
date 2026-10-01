@@ -1,0 +1,7 @@
+__pycache__/
+*.pt
+*.egg-info/
+.venv/
+node_modules/
+.obsidian/workspace*.json
+.pytest_cache/

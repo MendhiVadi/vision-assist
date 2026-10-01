@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vision Assist</title>
+  <style>
+    :root {
+      --bg: #0b0f1a; --panel: rgba(255,255,255,.05); --border: rgba(255,255,255,.1);
+      --text: #e8ecf5; --muted: #8b95ad; --accent: #00e5a0; --accent2: #5b8cff; --danger: #ff5c7a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; color: var(--text);
+      font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+      background:
+        radial-gradient(900px 500px at 10% -10%, rgba(91,140,255,.22), transparent 60%),
+        radial-gradient(800px 500px at 100% 0%, rgba(0,229,160,.16), transparent 60%),
+        var(--bg);
+    }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+    h1 {
+      margin: 0; font-size: 1.9rem; letter-spacing: -.02em;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .tag { color: var(--muted); font-size: .9rem; margin: .15rem 0 0; }
+    .lens-link {
+      color: var(--text); text-decoration: none; font-size: .9rem; padding: .45rem .9rem;
+      border: 1px solid var(--border); border-radius: 999px; background: var(--panel); transition: .2s;
+    }
+    .lens-link:hover { border-color: var(--accent); box-shadow: 0 0 18px rgba(0,229,160,.25); }
+
+    .card {
+      margin-top: 1.25rem; padding: 1rem; border-radius: 18px; background: var(--panel);
+      border: 1px solid var(--border); backdrop-filter: blur(10px);
+      box-shadow: 0 10px 40px rgba(0,0,0,.35);
+    }
+    .stage { position: relative; line-height: 0; border-radius: 12px; overflow: hidden; background: #000; aspect-ratio: 4/3; }
+    video { width: 100%; height: 100%; object-fit: contain; display: block; }
+    #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .badge {
+      position: absolute; top: 10px; left: 10px; line-height: 1; font-size: .75rem; font-weight: 600;
+      padding: .35rem .6rem; border-radius: 999px; background: rgba(0,0,0,.55); color: var(--muted);
+      display: flex; align-items: center; gap: .4rem; letter-spacing: .06em;
+    }
+    .badge::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    body[data-live="1"] .badge { color: #fff; }
+    body[data-live="1"] .badge::before { background: var(--danger); animation: pulse 1.2s infinite; }
+    body[data-live="1"] .stage { box-shadow: 0 0 0 2px var(--accent), 0 0 30px rgba(0,229,160,.35); }
+    @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(255,92,122,.7)} 100%{box-shadow:0 0 0 10px rgba(255,92,122,0)} }
+
+    .row { margin-top: .9rem; display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+    button {
+      font: inherit; font-weight: 600; cursor: pointer; color: var(--text); padding: .6rem 1.1rem;
+      border-radius: 12px; border: 1px solid var(--border); background: rgba(255,255,255,.07); transition: .18s;
+    }
+    button:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.3); }
+    button:active { transform: translateY(0) scale(.98); }
+    button:focus-visible, input:focus-visible, .lens-link:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+    #capture, #analyze { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #04120d; border: 0; }
+    #capture:hover, #analyze:hover { box-shadow: 0 6px 22px rgba(0,229,160,.35); }
+    #remove:hover { border-color: var(--danger); color: var(--danger); }
+    body[data-live="1"] #liveToggle { background: rgba(255,92,122,.18); border-color: var(--danger); color: #ffd3db; }
+    label { color: var(--muted); font-size: .9rem; display: flex; align-items: center; gap: .4rem; }
+    input[type=checkbox] { accent-color: var(--accent); width: 1rem; height: 1rem; }
+    input[type=file] { color: var(--muted); font-size: .85rem; max-width: 100%; }
+    input[type=file]::file-selector-button {
+      font: inherit; color: var(--text); background: rgba(255,255,255,.07); border: 1px solid var(--border);
+      border-radius: 8px; padding: .35rem .7rem; margin-right: .6rem; cursor: pointer;
+    }
+    #camStatus { color: var(--danger); font-size: .85rem; }
+
+    h2 { margin: 0 0 .6rem; font-size: .75rem; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
+    #output {
+      min-height: 2.5rem; font-size: 1.2rem; line-height: 1.5; white-space: pre-wrap;
+      padding: .9rem 1rem; border-radius: 12px; background: rgba(0,0,0,.35); border-left: 3px solid var(--accent);
+    }
+    #output:empty::before { content: 'Results will appear here.'; color: var(--muted); font-size: 1rem; }
+    #previewWrap img { width: 100%; max-height: 360px; object-fit: contain; border-radius: 12px; background: #000; display: block; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Vision Assist</h1>
+        <p class="tag">Point your camera. Hear what's around you.</p>
+      </div>
+      <a class="lens-link" href="/lens">Identify objects in a photo &rarr;</a>
+    </header>
+
+    <section class="card">
+      <div class="stage">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+        <span class="badge" id="badge">OFFLINE</span>
+      </div>
+      <div class="row">
+        <button id="capture">Capture &amp; analyze</button>
+        <button id="liveToggle" type="button">Start live</button>
+        <label><input type="checkbox" id="speak" checked> Speak</label>
+        <button id="camToggle" type="button">Stop camera</button>
+        <span id="camStatus"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Upload an image</h2>
+      <div class="row" style="margin-top:0"><input type="file" id="file" accept="image/*"></div>
+      <div id="previewWrap" hidden>
+        <div class="row"><img id="preview" alt="Selected image"></div>
+        <div class="row">
+          <button id="analyze">Analyze image</button>
+          <button id="remove" type="button">Remove image</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Output</h2>
+      <div id="output" aria-live="polite"></div>
+    </section>
+    <canvas id="canvas" hidden></canvas>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const video = $('video'), canvas = $('canvas'), file = $('file');
+    const preview = $('preview'), previewWrap = $('previewWrap');
+    const output = $('output'), camStatus = $('camStatus'), camToggle = $('camToggle');
+    let stream = null;
+
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+        video.srcObject = stream;
+        camToggle.textContent = 'Stop camera';
+        camStatus.textContent = '';
+      } catch (err) {
+        camStatus.textContent = 'Camera unavailable: ' + err.message;
+        camToggle.textContent = 'Start camera';
+      }
+    }
+    function stopCamera() {
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      stream = null;
+      video.srcObject = null;
+      camToggle.textContent = 'Start camera';
+    }
+    camToggle.onclick = () => (stream ? stopCamera() : startCamera());
+
+    // Draw detection boxes (pixel coords of the analyzed frame) over the live video.
+    const overlay = $('overlay');
+    function drawBoxes(dets, w, h) {
+      overlay.width = w || video.videoWidth || 640;
+      overlay.height = h || video.videoHeight || 480;
+      const ctx = overlay.getContext('2d');
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+      ctx.lineWidth = 3;
+      ctx.font = '18px system-ui, sans-serif';
+      ctx.textBaseline = 'top';
+      for (const d of dets || []) {
+        const [x1, y1, x2, y2] = d.box;
+        const label = `${d.label} ${Math.round(d.confidence * 100)}%`;
+        ctx.strokeStyle = '#00e676';
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        const w = ctx.measureText(label).width + 8;
+        ctx.fillStyle = '#00e676';
+        ctx.fillRect(x1, y1, w, 24);
+        ctx.fillStyle = '#000';
+        ctx.fillText(label, x1 + 4, y1 + 3);
+      }
+    }
+
+    async function send(blob) {
+      output.textContent = 'Processing...';
+      try {
+        const res = await fetch('/api/process', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
+        const data = await res.json();
+        output.textContent = data.output;
+        if (!live && blob.type === 'image/jpeg' && stream) drawBoxes(data.detections, data.width, data.height);
+      } catch (err) {
+        output.textContent = 'Error: ' + err.message;
+      }
+    }
+
+    // Downscale to <=640px wide before upload: matches the model's input size, so no accuracy
+    // is lost, but uploads and decoding are much cheaper.
+    function grabFrame() {
+      return new Promise((resolve) => {
+        const scale = Math.min(1, 640 / video.videoWidth);
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(resolve, 'image/jpeg', 0.85);
+      });
+    }
+
+    $('capture').onclick = async () => {
+      if (!stream || !video.videoWidth) { output.textContent = 'Camera is not running.'; return; }
+      send(await grabFrame());
+    };
+
+    // Live mode: analyze a frame whenever the previous request finishes, speak changes.
+    let live = false, lastSpoken = '', lastSpokenAt = 0;
+    function speak(text) {
+      const now = Date.now();
+      if (!$('speak').checked || text.startsWith('Error') || text === 'Nothing detected') return;
+      if (now - lastSpokenAt < 3000 || (text === lastSpoken && now - lastSpokenAt < 15000)) return;
+      if (speechSynthesis.speaking) return; // let the current sentence finish
+      lastSpoken = text; lastSpokenAt = now;
+      speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+    }
+    $('speak').onchange = () => { if (!$('speak').checked) speechSynthesis.cancel(); };
+    let liveGen = 0; // a restarted loop invalidates the old one
+    async function liveLoop(gen) {
+      while (live && gen === liveGen) {
+        if (!stream || !video.videoWidth) { await new Promise((r) => setTimeout(r, 500)); continue; }
+        try {
+          const blob = await grabFrame();
+          const res = await fetch('/api/process', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
+          const data = await res.json();
+          if (!live || gen !== liveGen) break;
+          output.textContent = data.output;
+          drawBoxes(data.detections, data.width, data.height);
+          speak(data.output);
+        } catch (err) {
+          output.textContent = 'Error: ' + err.message;
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+    }
+    $('liveToggle').onclick = () => {
+      live = !live;
+      $('liveToggle').textContent = live ? 'Stop live' : 'Start live';
+      liveGen++;
+      if (!live) { drawBoxes([]); speechSynthesis.cancel(); }
+      if (live) liveLoop(liveGen);
+    };
+
+    file.onchange = () => {
+      const f = file.files[0];
+      if (!f) return;
+      if (preview.src) URL.revokeObjectURL(preview.src);
+      preview.src = URL.createObjectURL(f);
+      previewWrap.hidden = false;
+    };
+    $('analyze').onclick = () => file.files[0] && send(file.files[0]);
+    $('remove').onclick = () => {
+      if (preview.src) URL.revokeObjectURL(preview.src);
+      preview.removeAttribute('src');
+      file.value = '';
+      previewWrap.hidden = true;
+      output.textContent = '';
+    };
+
+    startCamera();
+  </script>
+  <script>
+    // Reflect camera/live state in the UI (CSS keys off body[data-live]).
+    (() => {
+      const live = document.getElementById('liveToggle'), cam = document.getElementById('camToggle'), badge = document.getElementById('badge');
+      const sync = () => {
+        const isLive = live.textContent.trim() === 'Stop live';
+        const camOn = cam.textContent.trim() === 'Stop camera';
+        document.body.dataset.live = isLive ? '1' : '0';
+        badge.textContent = isLive ? 'LIVE' : camOn ? 'CAMERA ON' : 'OFFLINE';
+      };
+      const mo = new MutationObserver(sync);
+      [live, cam].forEach((el) => mo.observe(el, { childList: true, characterData: true, subtree: true }));
+      sync();
+    })();
+  </script>
+</body>
+</html>
