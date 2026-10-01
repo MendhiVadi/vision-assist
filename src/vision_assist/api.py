@@ -28,6 +28,8 @@ PAGES = {"/": "index.html", "/index.html": "index.html", "/lens": "lens.html"}
 PUBLIC = Path(__file__).resolve().parents[2] / "public"
 LENS_MODEL = "models/yoloe-v8l-seg-pf.pt"  # ~4,500 object classes
 MAX_UPLOAD = 20 * 1024 * 1024
+STATIC_TYPES = {".js": "text/javascript", ".mjs": "text/javascript", ".wasm": "application/wasm",
+                ".json": "application/json", ".onnx": "application/octet-stream"}
 
 
 # The lens model has ~4,500 classes but names some things differently from everyday speech.
@@ -104,6 +106,8 @@ def make_handler(analyzer: Analyzer, public: Path = PUBLIC):
             self.send_response(status)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cross-Origin-Opener-Policy", "same-origin")  # lets onnxruntime-web use threads
+            self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
             self.end_headers()
             try:
                 self.wfile.write(body)
@@ -121,6 +125,11 @@ def make_handler(analyzer: Analyzer, public: Path = PUBLIC):
                 page = public / name
                 if page.is_file():
                     return self._send(200, page.read_bytes(), "text/html; charset=utf-8")
+            rel = urlsplit(self.path).path.lstrip("/")
+            f = (public / rel).resolve()
+            if rel and f.is_file() and public.resolve() in f.parents:  # js/, ort/, models/ for in-browser detection
+                ctype = STATIC_TYPES.get(f.suffix, "application/octet-stream")
+                return self._send(200, f.read_bytes(), ctype)
             self._json(404, {"error": "not found"})
 
         def do_POST(self):
