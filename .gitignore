@@ -11,3 +11,4 @@ public/models/*.onnx
 models/*.onnx
 build_onnx/
 models/*.json
+aditya.pptx

@@ -9,7 +9,7 @@
   const MODELS = {
     // `wasm` is used when WebGPU is unavailable (smaller = usable speed on CPU).
     live: { url: '/models/live.onnx', wasmUrl: '/models/live-lite.onnx', labels: '/models/live.json', wasmLabels: '/models/live.json', conf: 0.45 },
-    lens: { url: '/models/lens.onnx', labels: '/models/lens.json', conf: 0.3 },
+    lens: { url: '/models/lens.onnx', labels: '/models/lens.json', rules: '/models/lens_rules.json', conf: 0.3 },
   };
   const IOU = 0.5, MAX_DET = 30, CLOSE = 0.25, NEAR = 0.08;
 
@@ -35,8 +35,9 @@
       const url = useGPU || !m.wasmUrl ? m.url : m.wasmUrl;
       const labelsUrl = useGPU || !m.wasmLabels ? m.labels : m.wasmLabels;
       onStatus && onStatus(`Loading ${kind} model (first time only)...`);
-      const [labels, buf] = await Promise.all([
+      const [labels, rules, buf] = await Promise.all([
         fetch(labelsUrl).then((r) => r.json()),
+        m.rules ? fetch(m.rules).then((r) => r.json()).catch(() => null) : null,
         fetch(url).then((r) => { if (!r.ok) throw new Error('model download failed'); return r.arrayBuffer(); }),
       ]);
       let session;
@@ -45,7 +46,9 @@
         catch (e) { session = null; }
       }
       if (!session) session = await ort.InferenceSession.create(buf, { executionProviders: ['wasm'] });
-      return { session, labels, conf: m.conf };
+      // Web-tag vocabulary: collapse "jazz artist"/"rocketer" etc. to "person", suppress non-physical tags.
+      const person = new Set(rules && rules.person), drop = new Set(rules && rules.drop), merge = (rules && rules.merge) || {};
+      return { session, labels, conf: m.conf, person, drop, merge };
     })();
     sessions[kind].catch(() => { delete sessions[kind]; });
     return sessions[kind];
@@ -83,13 +86,15 @@
     return ua > 0 ? inter / ua : 0;
   }
 
-  function postprocess(out, labels, conf, pre) {
+  function postprocess(out, labels, conf, pre, drop) {
     const [, C, N] = out.dims;
     const d = out.data, nc = labels.length;
     const cand = [];
+    const skip = drop && drop.size ? labels.map((l) => drop.has(l)) : null;
     for (let i = 0; i < N; i++) {
       let best = -1, bs = conf;
       for (let k = 0; k < nc; k++) {
+        if (skip && skip[k]) continue;
         const s = d[(4 + k) * N + i];
         if (s > bs) { bs = s; best = k; }
       }
@@ -166,11 +171,11 @@
   let queue = Promise.resolve(); // one inference at a time
   function analyze(src, kind = 'live', onStatus) {
     const job = queue.then(async () => {
-      const { session, labels, conf } = await load(kind, onStatus);
+      const { session, labels, conf, person, drop, merge } = await load(kind, onStatus);
       const pre = preprocess(src);
       const res = await session.run({ [session.inputNames[0]]: pre.tensor });
-      let dets = postprocess(res[session.outputNames[0]], labels, conf, pre);
-      if (kind === 'lens') dets = dets.map((d) => ({ ...d, label: ALIASES[d.label] || d.label }));
+      let dets = postprocess(res[session.outputNames[0]], labels, conf, pre, drop);
+      if (kind === 'lens') dets = dets.map((d) => ({ ...d, label: person.has(d.label) ? 'person' : merge[d.label] || ALIASES[d.label] || d.label }));
       dets = dets.map((d) => ({ label: d.label, confidence: Math.round(d.confidence * 1000) / 1000, box: d.box.map(Math.round) }));
       return { output: describe(dets, pre.w, pre.h), objects: summarize(dets), width: pre.w, height: pre.h, detections: dets };
     });
