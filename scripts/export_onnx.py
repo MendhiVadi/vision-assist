@@ -2,7 +2,7 @@
 
 live.onnx       yolo11m          live camera (WebGPU)
 live-lite.onnx  yolo11s          live camera fallback when WebGPU is unavailable
-lens.onnx       yoloe-11s-seg-pf photo / lens mode (~4,500 classes)
+lens.onnx       yoloe-v8l-seg-pf photo / lens mode (~4,500 classes)
 """
 import json
 import shutil
@@ -12,7 +12,7 @@ from ultralytics import YOLO
 
 OUT = Path("public/models")
 OUT.mkdir(parents=True, exist_ok=True)
-JOBS = [("yolo11m", "live", True), ("yolo11s", "live-lite", False), ("yoloe-11s-seg-pf", "lens", True)]
+JOBS = [("yolo11m", "live", True), ("yolo11s", "live-lite", False), ("yoloe-v8l-seg-pf", "lens", True)]
 
 for weights, name, labels in JOBS:
     model = YOLO(f"models/{weights}.pt")
