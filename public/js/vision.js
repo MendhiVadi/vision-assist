@@ -9,7 +9,8 @@
   const MODELS = {
     // `wasm` is used when WebGPU is unavailable (smaller = usable speed on CPU).
     live: { url: '/models/live.onnx', wasmUrl: '/models/live-lite.onnx', labels: '/models/live.json', wasmLabels: '/models/live.json', conf: 0.45 },
-    lens: { url: '/models/lens.onnx', labels: '/models/lens.json', rules: '/models/lens_rules.json', conf: 0.3 },
+    // gpu:false -- yoloe-v8l gives wrong outputs on the WebGPU provider (wasm matches PyTorch), so keep it on wasm.
+    lens: { url: '/models/lens.onnx', labels: '/models/lens.json', rules: '/models/lens_rules.json', conf: 0.3, gpu: false },
   };
   const IOU = 0.5, MAX_DET = 30, CLOSE = 0.25, NEAR = 0.08;
 
@@ -31,7 +32,7 @@
     if (sessions[kind]) return sessions[kind];
     sessions[kind] = (async () => {
       const m = MODELS[kind];
-      const useGPU = hasGPU;
+      const useGPU = hasGPU && m.gpu !== false;
       const url = useGPU || !m.wasmUrl ? m.url : m.wasmUrl;
       const labelsUrl = useGPU || !m.wasmLabels ? m.labels : m.wasmLabels;
       onStatus && onStatus(`Loading ${kind} model (first time only)...`);
